@@ -72,6 +72,7 @@ void dmpDataReady() {
 void move_servo(int speed);
 int angle_to_speed(float angle);
 void store_angle(float angle);
+void mode_4();
 
 Servo reel_servo;
 int servo_pin = 9;
@@ -80,6 +81,8 @@ int speed = 0;
 // Button 
 int button_pin = 4;
 int button_state = 0;
+int new_state;
+int old_state = 0;
 float first_angle = -1;
 float second_angle = -1;
 
@@ -170,13 +173,7 @@ void setup() {
 // ================================================================
 
 void loop() {
-    if (first_angle == -1){
-      Serial.print("h");
-      store_angle(first_angle);
-    }
-    if (second_angle == -1){
-      store_angle(second_angle);
-    }
+    mode_4();
     
     // if programming failed, don't try to do anything
     if (!dmpReady) return;
@@ -203,6 +200,7 @@ void loop() {
     }
     Serial.println("First Angle is: "+ (String)first_angle);
     Serial.println("Second Angle is: "+ (String)second_angle);
+    delay(1000);
 }
 
 int angle_to_speed(float roll_angle)
@@ -223,17 +221,50 @@ void move_servo(int speed)
   Serial.print(speed);
 }
 
+int button_toggle(int button_pin)
+{
+  new_state = digitalRead(button_pin);
 
-void store_angle(float angle)
+  if (old_state == 1 && new_state == 0)
+  {
+    old_state = new_state;
+    return 1;
+  }
+  else
+  {
+    old_state = new_state;
+    return 0;
+  }
+}
+
+
+void store_angle(float *angle)
 {
  while(1)
   {
-    mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-    if (digitalRead(button_pin)){
-      Serial.print("Button Pressed");
-      angle = ypr[2];
+    if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) 
+    {
+      mpu.dmpGetQuaternion(&q, fifoBuffer);
+      mpu.dmpGetGravity(&gravity, &q);
+      mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+    }
+    if (button_toggle(button_pin)){
+      *angle = ypr[2] * 180/M_PI;
+      Serial.println("Button Pressed" + String(*angle));
       break;
 
     }
   } 
+}
+
+void mode_4()
+{
+  if (first_angle == -1){
+    Serial.print("Waiting for button press 1");
+    store_angle(&first_angle);
+  }
+  if (second_angle == -1){
+    Serial.print("Waiting for button press 2");
+    store_angle(&second_angle);
+  }
 }
