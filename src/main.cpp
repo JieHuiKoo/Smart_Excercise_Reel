@@ -1,35 +1,33 @@
+// ================================================================
+// ===                      Libraries                           ===
+// ================================================================
 #include <Servo.h>
 
-// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
-// for both classes must be in the include path of your project
+// ================================================================
+// ===                      Initialise Pins                     ===
+// ================================================================
+#define INTERRUPT_PIN 2 // use pin 2 on Arduino Uno & most boards for interrupt, INT
+#define LED_PIN 13 // (Arduino is 13)
+#define SERVO_PIN 9
+#define ENTER_BUTTON_PIN 4
+#define UP_BUTTON_PIN 1
+#define DOWN_BUTTON_PIN 2
+
+
+// ================================================================
+// ===                      MPU Stuffs                          ===
+// ================================================================
 #include "I2Cdev.h"
-
 #include "MPU6050_6Axis_MotionApps20.h"
-//#include "MPU6050.h" // not necessary if using MotionApps include file
 
-// Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
-// is used in I2Cdev.h
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
     #include "Wire.h"
 #endif
 
-// class default I2C address is 0x68
-// specific I2C addresses may be passed as a parameter here
-// AD0 low = 0x68 (default for SparkFun breakout and InvenSense evaluation board)
-// AD0 high = 0x69
 MPU6050 mpu;
-//MPU6050 mpu(0x69); // <-- use for AD0 high
-
-/* =========================================================================
-   NOTE: In addition to connection 3.3v, GND, SDA, and SCL, this sketch
-   depends on the MPU-6050's INT pin being connected to the Arduino's
-   external interrupt #0 pin. On the Arduino Uno and Mega 2560, this is
-   digital I/O pin 2.
- * ========================================================================= */
 
 #define OUTPUT_READABLE_YAWPITCHROLL
-#define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
-#define LED_PIN 13 // (Arduino is 13, Teensy is 11, Teensy++ is 6)
+
 bool blinkState = false;
 
 // MPU control/status vars
@@ -52,44 +50,52 @@ float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gra
 // packet structure for InvenSense teapot demo
 uint8_t teapotPacket[14] = { '$', 0x02, 0,0, 0,0, 0,0, 0,0, 0x00, 0x00, '\r', '\n' };
 
-
-
-// ================================================================
-// ===               INTERRUPT DETECTION ROUTINE                ===
-// ================================================================
-
+// Interrupt Detection Routine
 volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
 void dmpDataReady() {
     mpuInterrupt = true;
 }
 
-
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
 
-// Servo Stuff
+// Declare custom functions
+void update_mpu();
 void move_servo(int speed);
 int angle_to_speed(float angle);
 void store_angle(float angle);
 void mode_4();
+void print_ypr();
 
+// Servo Stuff
 Servo reel_servo;
-int servo_pin = 9;
-int speed = 0;
+int speed = 90; // Declare initial speed, 90 is stop
 
-// Button 
-int button_pin = 4;
-int button_state = 0;
+// Button Stuffs
 int new_state;
 int old_state = 0;
+
+// MPU Angle stuffs
 float first_angle = -1;
 float second_angle = -1;
 
-void setup() {
-    reel_servo.attach(servo_pin);
-    pinMode(button_pin, INPUT);
+// Default Mode
+int mode = 4;
 
+void setup() {
+    // Initialise servo
+    reel_servo.attach(SERVO_PIN);
+
+    // Initialise buttons
+    pinMode(ENTER_BUTTON_PIN, INPUT);
+    pinMode(UP_BUTTON_PIN, INPUT);
+    pinMode(DOWN_BUTTON_PIN, INPUT);
+
+    // Initialise LED
+    pinMode(LED_PIN, OUTPUT);
+    
+    // ========== MPU Initialisation ==========
     // join I2C bus (I2Cdev library doesn't do this automatically)
     #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
         Wire.begin();
@@ -161,9 +167,6 @@ void setup() {
         Serial.print(devStatus);
         Serial.println(F(")"));
     }
-
-    // configure LED for output
-    pinMode(LED_PIN, OUTPUT);
 }
 
 
@@ -173,36 +176,46 @@ void setup() {
 // ================================================================
 
 void loop() {
-    mode_4();
-    
-    // if programming failed, don't try to do anything
-    if (!dmpReady) return;
-    // read a packet from FIFO
-    if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) { // Get the Latest packet 
-        #ifdef OUTPUT_READABLE_YAWPITCHROLL
-            // display Euler angles in degrees
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-            mpu.dmpGetGravity(&gravity, &q);
-            mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-            Serial.print("ypr\t");
-            Serial.print(ypr[0] * 180/M_PI);
-            Serial.print("\t");
-            Serial.print(ypr[1] * 180/M_PI);
-            Serial.print("\t");
-            Serial.println(ypr[2] * 180/M_PI);
-            speed = angle_to_speed(ypr[2] * 180/M_PI);
-            move_servo(speed);
-        #endif
-
-        // blink LED to indicate activity
-        blinkState = !blinkState;
-        digitalWrite(LED_PIN, blinkState);
+    // If MPU initialisation failed, do not do anything
+    if (!dmpReady) 
+    {
+      Serial.print("MPU Initialisation failed, exiting...");
+      return;
     }
+
+    if (mode == 1)
+    {
+
+    }
+    else if (mode == 2)
+    {
+
+    }
+
+    else if (mode == 3)
+    {
+
+    }
+
+    else if (mode == 4)
+    {
+      mode_4();
+    }
+
+    
+    
+    
+
+
+    update_mpu();
+    print_ypr();
     Serial.println("First Angle is: "+ (String)first_angle);
     Serial.println("Second Angle is: "+ (String)second_angle);
     delay(1000);
 }
 
+// Input: float roll_angle
+// Output: int speed of motor
 int angle_to_speed(float roll_angle)
 {
   int speed = (int)roll_angle+90;
@@ -215,12 +228,16 @@ int angle_to_speed(float roll_angle)
     
 }
 
+// Input: int speed of servo
+// Output: None, makes the servo move at input speed
 void move_servo(int speed)
 {
   reel_servo.write(speed);
   Serial.print(speed);
 }
 
+// Input: int button_pin of button to be checked
+// Output: returns int 1 if button is released from being pressed
 int button_toggle(int button_pin)
 {
   new_state = digitalRead(button_pin);
@@ -237,22 +254,29 @@ int button_toggle(int button_pin)
   }
 }
 
-
-void store_angle(float *angle)
+// Input: None
+// Output: None, updates ypr value when called
+void update_mpu()
 {
- while(1)
-  {
-    if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) 
+  if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) 
     {
       mpu.dmpGetQuaternion(&q, fifoBuffer);
       mpu.dmpGetGravity(&gravity, &q);
       mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
     }
-    if (button_toggle(button_pin)){
-      *angle = ypr[2] * 180/M_PI;
-      Serial.println("Button Pressed" + String(*angle));
-      break;
+}
 
+// Input: address of angle variable to be updated
+// Output: None, updates angle at input address with the current roll_angle
+void store_angle(float *angle)
+{
+ while(1)
+  {
+    update_mpu();
+    if (button_toggle(ENTER_BUTTON_PIN)){
+      *angle = ypr[2] * 180/M_PI;
+      Serial.println("Button Pressed: " + String(*angle));
+      break;
     }
   } 
 }
@@ -260,11 +284,23 @@ void store_angle(float *angle)
 void mode_4()
 {
   if (first_angle == -1){
-    Serial.print("Waiting for button press 1");
+    Serial.print("Waiting for button press 1\n");
     store_angle(&first_angle);
   }
   if (second_angle == -1){
-    Serial.print("Waiting for button press 2");
+    Serial.print("Waiting for button press 2\n");
     store_angle(&second_angle);
   }
+}
+
+// Input: None
+// Output: None, prints ypr on a single line
+void print_ypr()
+{
+  Serial.print("ypr\t");
+  Serial.print(ypr[0] * 180/M_PI);
+  Serial.print("\t");
+  Serial.print(ypr[1] * 180/M_PI);
+  Serial.print("\t");
+  Serial.println(ypr[2] * 180/M_PI);
 }
