@@ -67,21 +67,30 @@ int angle_to_speed(float angle);
 void store_angle(float angle);
 void mode_4();
 void print_ypr();
+String speed_to_text();
+bool blink_value_flag(unsigned long interval);
+
 
 // Servo Stuff
 Servo reel_servo;
-int speed = 90; // Declare initial speed, 90 is stop
 
 // Button Stuffs
 int new_state;
 int old_state = 0;
 
-// MPU Angle stuffs
+// Excercise Stuffs
+bool excercise_in_progress = false;
 float first_angle = -1;
 float second_angle = -1;
+int reps_total = 10;
+int reps_current = 0;
+int speed = 0;
 
 // Default Mode
 int mode = 4;
+
+// For blinking when in editing mode
+unsigned long previousMillis = 0;
 
 void setup() {
     // Initialise servo
@@ -281,6 +290,81 @@ void store_angle(float *angle)
   } 
 }
 
+// Input: None
+// Output: None, prints ypr on a single line
+void print_ypr()
+{
+  Serial.print("ypr\t");
+  Serial.print(ypr[0] * 180/M_PI);
+  Serial.print("\t");
+  Serial.print(ypr[1] * 180/M_PI);
+  Serial.print("\t");
+  Serial.println(ypr[2] * 180/M_PI);
+}
+
+// Input:
+// 1) int editing_mode, Takes in whether editing mode is 1 or 0, to turn on blinking
+// 2) int mode, For selecting which mode to blink when in editing mode
+// 3) int rep_in_progress, To change output text of Press enter to start/stop excercise
+String output_text = ""; //20 char only!!!!!!!
+String excercise_text = "";
+String start_excercise_text = "Press ENTER to start";
+String stop_excercise_text = "Press ENTER to stop excercise";
+String speed_text = "";
+String speed_prefixtext = "Speed: ";
+String reps_text = "";
+String reps_prefixtext = "REPS: ";
+String angle_text = "";
+String angle_prefixtext = "Angle: ";
+
+int showvalue_flag = 1;
+void print_mainscreen(bool editing_mode, int mode, bool excercise_in_progress)
+{
+  if (editing_mode && blink_value_flag(500))
+  {
+    showvalue_flag = !showvalue_flag;
+  }
+
+  if (!editing_mode)
+  {
+    if (excercise_in_progress)
+      excercise_text = stop_excercise_text;
+    else
+      excercise_text = start_excercise_text;
+    speed_text = speed_prefixtext += speed_to_text();
+    reps_text = reps_prefixtext += String(reps_total);
+    angle_text = angle_prefixtext += String(round(second_angle - first_angle));
+  }
+  else
+  {
+    if (mode==2)
+    {
+      if (showvalue_flag)
+        speed_text = speed_prefixtext += speed_to_text();
+      else
+        speed_text = speed_prefixtext;
+    }
+    else if (mode == 3)
+    {
+      if (showvalue_flag)
+        reps_text = reps_prefixtext += String(reps_total);
+      else
+        reps_text = reps_prefixtext;
+    }
+    else if (mode == 4)
+    {
+      if (showvalue_flag)
+        angle_text = angle_prefixtext += "Enter to edit";
+      else
+        angle_text = angle_prefixtext;
+    }
+  }
+  
+  output_text = excercise_text + "\n" + speed_text +  "\n" + reps_text +  "\n" + angle_text;
+
+
+}
+
 void mode_4()
 {
   if (first_angle == -1){
@@ -293,14 +377,29 @@ void mode_4()
   }
 }
 
-// Input: None
-// Output: None, prints ypr on a single line
-void print_ypr()
+String speed_to_text()
 {
-  Serial.print("ypr\t");
-  Serial.print(ypr[0] * 180/M_PI);
-  Serial.print("\t");
-  Serial.print(ypr[1] * 180/M_PI);
-  Serial.print("\t");
-  Serial.println(ypr[2] * 180/M_PI);
+  int speed1 = 5;
+  int speed2 = 10;
+  int speed3 = 15;
+  if (speed==speed1)
+    return "LOW";
+  else if (speed==speed2)
+    return "MED";
+  else if (speed==speed3)
+    return "MED";
+  else
+    return "";
+}
+
+bool blink_value_flag(unsigned long interval)
+{ 
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval)
+  {
+    previousMillis = currentMillis;
+  return true;
+  }
+  else
+    return false;
 }
