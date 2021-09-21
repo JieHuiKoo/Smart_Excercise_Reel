@@ -92,6 +92,13 @@ int mode = 4;
 // For blinking when in editing mode
 unsigned long previousMillis = 0;
 
+// Initiating Variables for Mode 2 (speed_updating)
+int speed_update = 5;
+
+// Initiating Variables for Mode 3 (rep_updating)
+int rep_update = 10;
+int rep = 10;
+
 void setup() {
     // Initialise servo
     reel_servo.attach(SERVO_PIN);
@@ -103,7 +110,7 @@ void setup() {
 
     // Initialise LED
     pinMode(LED_PIN, OUTPUT);
-    
+
     // ========== MPU Initialisation ==========
     // join I2C bus (I2Cdev library doesn't do this automatically)
     #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
@@ -186,7 +193,7 @@ void setup() {
 
 void loop() {
     // If MPU initialisation failed, do not do anything
-    if (!dmpReady) 
+    if (!dmpReady)
     {
       Serial.print("MPU Initialisation failed, exiting...");
       return;
@@ -211,9 +218,9 @@ void loop() {
       mode_4();
     }
 
-    
-    
-    
+
+
+
 
 
     update_mpu();
@@ -234,7 +241,7 @@ int angle_to_speed(float roll_angle)
   }
   else
     return 90;
-    
+
 }
 
 // Input: int speed of servo
@@ -267,7 +274,7 @@ int button_toggle(int button_pin)
 // Output: None, updates ypr value when called
 void update_mpu()
 {
-  if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) 
+  if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer))
     {
       mpu.dmpGetQuaternion(&q, fifoBuffer);
       mpu.dmpGetGravity(&gravity, &q);
@@ -287,7 +294,7 @@ void store_angle(float *angle)
       Serial.println("Button Pressed: " + String(*angle));
       break;
     }
-  } 
+  }
 }
 
 // Input: None
@@ -359,11 +366,57 @@ void print_mainscreen(bool editing_mode, int mode, bool excercise_in_progress)
         angle_text = angle_prefixtext;
     }
   }
-  
+
   output_text = excercise_text + "\n" + speed_text +  "\n" + reps_text +  "\n" + angle_text;
 
 
 }
+
+// need to constantly read the new speed_update variable in the menu to show the changes
+// to allow up and down button to change speed variable everytime they are pressed
+// enter key to lock in the speed (mapped to 100 for stepper)
+
+void mode_2()
+{
+  while (1) {
+    if(button_toggle(UP_BUTTON_PIN)){
+      if(0<speed_update<10){
+      speed_update+=1;
+    }
+    }
+    if(button_toggle(DOWN_BUTTON_PIN)){
+      if(0<speed_update<10){
+      speed_update-=1;
+    }
+    }
+    if(button_toggle(ENTER_BUTTON_PIN)){
+      speed = map(speed_update, 0,10,0,100);
+      break;
+    }
+  }
+
+//change reps by +-, enter to save into "rep" variable
+
+  void mode_3()
+  {
+    while (1) {
+      if(button_toggle(UP_BUTTON_PIN)){
+        if(0<rep_update<30){
+        rep_update+=1;
+      }
+      }
+      if(button_toggle(DOWN_BUTTON_PIN)){
+        if(0<rep_update<30){
+        speed_update-=1;
+      }
+      }
+      if(button_toggle(ENTER_BUTTON_PIN)){
+        rep = rep_update;
+        break;
+      }
+    }
+
+
 
 void mode_4()
 {
@@ -393,7 +446,7 @@ String speed_to_text()
 }
 
 bool blink_value_flag(unsigned long interval)
-{ 
+{
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis >= interval)
   {
