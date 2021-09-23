@@ -11,7 +11,7 @@
 #define SERVO_PIN 9
 #define ENTER_BUTTON_PIN 4
 #define UP_BUTTON_PIN 1
-#define DOWN_BUTTON_PIN 2
+#define DOWN_BUTTON_PIN 3
 
 
 // ================================================================
@@ -218,11 +218,6 @@ void loop() {
       mode_4();
     }
 
-
-
-
-
-
     update_mpu();
     print_ypr();
     Serial.println("First Angle is: "+ (String)first_angle);
@@ -368,8 +363,6 @@ void print_mainscreen(bool editing_mode, int mode, bool excercise_in_progress)
   }
 
   output_text = excercise_text + "\n" + speed_text +  "\n" + reps_text +  "\n" + angle_text;
-
-
 }
 
 // need to constantly read the new speed_update variable in the menu to show the changes
@@ -380,42 +373,43 @@ void mode_2()
 {
   while (1) {
     if(button_toggle(UP_BUTTON_PIN)){
-      if(0<speed_update<10){
+      if(0<speed_update && speed_update<10){
       speed_update+=1;
-    }
+      }
     }
     if(button_toggle(DOWN_BUTTON_PIN)){
-      if(0<speed_update<10){
+      if(0<speed_update && speed_update<10){
       speed_update-=1;
-    }
+      }
     }
     if(button_toggle(ENTER_BUTTON_PIN)){
       speed = map(speed_update, 0,10,0,100);
       break;
     }
   }
+}
 
 //change reps by +-, enter to save into "rep" variable
 
-  void mode_3()
-  {
-    while (1) {
-      if(button_toggle(UP_BUTTON_PIN)){
-        if(0<rep_update<30){
-        rep_update+=1;
-      }
-      }
-      if(button_toggle(DOWN_BUTTON_PIN)){
-        if(0<rep_update<30){
-        speed_update-=1;
-      }
-      }
-      if(button_toggle(ENTER_BUTTON_PIN)){
-        rep = rep_update;
-        break;
+void mode_3()
+{
+  while (1) {
+    if(button_toggle(UP_BUTTON_PIN)){
+      if(0<rep_update && rep_update<30){
+      rep_update+=1;
       }
     }
-
+    if(button_toggle(DOWN_BUTTON_PIN)){
+      if(0<rep_update && rep_update<30){
+      rep_update-=1;
+      }
+    }
+    if(button_toggle(ENTER_BUTTON_PIN)){
+      rep = rep_update;
+      break;
+    }
+  }
+}
 
 
 void mode_4()
@@ -440,7 +434,7 @@ String speed_to_text()
   else if (speed==speed2)
     return "MED";
   else if (speed==speed3)
-    return "MED";
+    return "HIGH";
   else
     return "";
 }
