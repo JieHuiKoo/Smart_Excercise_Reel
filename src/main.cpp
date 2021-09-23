@@ -2,16 +2,18 @@
 // ===                      Libraries                           ===
 // ================================================================
 #include <Servo.h>
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 // ================================================================
 // ===                      Initialise Pins                     ===
 // ================================================================
-#define INTERRUPT_PIN 2 // use pin 2 on Arduino Uno & most boards for interrupt, INT
+#define INTERRUPT_PIN 12 // use pin 2 on Arduino Uno & most boards for interrupt, INT
 #define LED_PIN 13 // (Arduino is 13)
 #define SERVO_PIN 9
-#define ENTER_BUTTON_PIN 4
+#define ENTER_BUTTON_PIN 3
 #define UP_BUTTON_PIN 1
-#define DOWN_BUTTON_PIN 3
+#define DOWN_BUTTON_PIN 2
 
 
 // ================================================================
@@ -100,6 +102,14 @@ int rep_update = 10;
 int rep = 10;
 
 void setup() {
+
+	// initialize the LCD
+	lcd.init();
+
+	// Turn on the blacklight and print a message.
+	lcd.backlight();
+	lcd.print("VV big test");
+
     // Initialise servo
     reel_servo.attach(SERVO_PIN);
 
@@ -195,7 +205,7 @@ void loop() {
     // If MPU initialisation failed, do not do anything
     if (!dmpReady)
     {
-      Serial.print("MPU Initialisation failed, exiting...");
+      lcd.print("MPU Initialisation failed.");
       return;
     }
 
@@ -215,13 +225,15 @@ void loop() {
 
     else if (mode == 4)
     {
-      mode_4();
+      //mode_4();
     }
 
     update_mpu();
     print_ypr();
-    Serial.println("First Angle is: "+ (String)first_angle);
-    Serial.println("Second Angle is: "+ (String)second_angle);
+	lcd.setCursor(0,0);
+    lcd.print(ypr[2]*180/M_PI);
+	// lcd.print("First Angle is: "+ (String)first_angle);
+    // lcd.println("Second Angle is: "+ (String)second_angle);
     delay(1000);
 }
 
