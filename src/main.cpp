@@ -19,7 +19,7 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 #define UP_BUTTON_PIN 12
 #define ENTER_BUTTON_PIN 13
 #define INTERRUPT_PIN 3
-#define ANGLE_PIN 2
+#define ANGLE_PIN A1
 
 
 // ================================================================
@@ -27,7 +27,7 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 // ================================================================
 
 // Declare custom functions
-void store_angle(float *angle);
+void store_angle(float *angle, int angle_num);
 void mode_2();
 void mode_3();
 void mode_4();
@@ -37,7 +37,7 @@ int enter_button_toggle();
 void print_ypr();
 void sound_buzzer();
 void lcd_print();
-int update_angle();
+void update_angle();
 void print_mainscreen(int editing_mode, int mode, int sub_mode);
 bool blink_value_flag(unsigned long interval);
 
@@ -47,8 +47,16 @@ String speed_text;
 String reps_text;
 String angle_text;
 
+// Accelerometer Stuff
+int WINDOW_SIZE = 20;
+int INDEX = 0;
+int VALUE = 0;
+int SUM = 0;
+int READINGS[20];
+int AVERAGED = 0;
+
 // Servo Stuff
-unsigned long prevStepMicros = 0;
+int num_steps_travelled = 0;
 
 // Button Stuffs
 int enter_btn_new_state;
@@ -61,10 +69,8 @@ int up_btn_new_state;
 int up_btn_old_state = 0;
 
 // Excercise Stuffs
-bool excercise_in_progress = false;
 float first_angle = -1;
 float second_angle = -1;
-float angle_range = 0;
 int reps_total = 10;
 int reps_current = 1;
 int speed = 1;
@@ -103,17 +109,27 @@ void setup() {
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
 int count = 0;
+int choice = 0;
 void loop() {
     count += 1;
-
+    Serial.print(choice);
     if (mode == 1)
     {
       print_mainscreen(0,1,1);
+      if (enter_button_toggle())
+      {
+        // mode_1() - Start excercise
+          // Motor starts moving at set rpm spped, continually moving until current_arm_angle reach second_angle
+          // Upon reaching second angle, increment reps_current, and sound beep
+          // Motor starts moving at set -ve rpm speed, continually moving until current_arm_angle reach first_angle
+          mode = 1;
+      }
+
       // Check for if user wants to change mode
-      if(up_button_toggle() || down_button_toggle())
+      else if(up_button_toggle() || down_button_toggle())
       {
         // Go into loop and ask for edit
-        int choice = 2;
+        choice = 2;
 
         // Put in a while loop until user makes a choice to edit which mode
         while(1)
@@ -121,41 +137,29 @@ void loop() {
           // If upbutton is pressed
           if (up_button_toggle())
           {
-            choice += 1;
-            if (choice == 5)
-              choice = 1;
+            choice -= 1;
+            if (choice == 1)
+              choice = 4;
           }
           
           // If down button is pressed
           else if (down_button_toggle())
           {
-            choice -= 1;
-            if (choice == 0)
-              choice = 4;
+            choice += 1;
+            if (choice == 5)
+              choice = 2;
           }
 
-          if (enter_button_toggle())
+          else if (enter_button_toggle())
           {
-            if (choice == 2)
-            {
-              mode = 2;
-              break;
-            }
-            else if (choice == 3)
-            {
-              mode = 3;
-              break;
-            }
-            else if (choice == 4)
-            {
-              mode = 4;
-              break;
-            }
+            mode = choice;
+            break;
           }
-          print_mainscreen(2, choice,0);
+          print_mainscreen(2, choice, 1);
         }
       }
     }
+
     else if (mode == 2)
     {
       mode_2();
@@ -248,27 +252,13 @@ int down_button_toggle()
 // 3) int rep_in_progress, To change output text of Press enter to start/stop excercise
 void print_mainscreen(int editing_mode, int mode, int sub_mode)
 {
-  excercise_text = "                    ";
-  speed_text = "                    ";
-  reps_text = "                    ";
-  angle_text = "                    ";
-
-  // Clear screen first
-  lcd.setCursor(0,0);
-  lcd.print(excercise_text);
-  lcd.setCursor(0,1);
-  lcd.print(speed_text);
-  lcd.setCursor(0,2);
-  lcd.print(reps_text);
-  lcd.setCursor(0,3);
-  lcd.print(angle_text);
   String start_excercise_text = "Press ENTER to start";
   String stop_excercise_text = "Press ENTER to stop excercise";
   String speed_prefixtext = "Speed: ";
   String reps_prefixtext = "REPS: ";
   String angle_prefixtext = "Angle: ";
 
-  if (editing_mode && blink_value_flag(1000))
+  if (blink_value_flag(700))
   {
     showvalue_flag = !showvalue_flag;
   }
@@ -276,6 +266,64 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
   if (editing_mode == 0)
   {
     if (mode == 4)
+    {     
+      if (sub_mode == 1)
+      {
+        excercise_text = "Please Wait!        ";
+      }
+    }
+
+    // Mode 1 = excercise page
+    else if (mode == 1)
+    {
+      //sub_mode 1 = haven't started excercise
+      if (sub_mode == 1)
+      {
+        excercise_text = start_excercise_text;
+        reps_text = reps_prefixtext + String(reps_total) + "          ";
+        angle_text = angle_prefixtext + String(second_angle) + "          ";
+        speed_text = speed_prefixtext + String(speed) + "          ";
+      }
+
+      // sub_mode 2 = started excercise already
+      else if (sub_mode == 2)
+      {
+        excercise_text = stop_excercise_text;
+        reps_text = reps_prefixtext + String(reps_current) + '/'+ String(reps_total) + "      ";
+        angle_text = angle_prefixtext + String(current_arm_angle) + "          ";
+        speed_text = speed_prefixtext + String(speed);
+      }
+    }
+  }
+  else if (editing_mode == 1)
+  {
+    if (mode==2)
+    {
+      if (sub_mode == 1)
+      {
+        excercise_text = "Editing Speed       ";
+        reps_text = reps_prefixtext + String(reps_total) + "          ";
+        angle_text = angle_prefixtext + String(second_angle) + "          ";
+        if (showvalue_flag)
+          speed_text = speed_prefixtext + String(speed) + "          ";
+        else
+          speed_text = speed_prefixtext + "Enter to set";
+      }
+    }
+    else if (mode == 3)
+    {
+      if (sub_mode == 1)
+      {
+        excercise_text = "Editing REPS        ";
+        speed_text = speed_prefixtext + String(speed) + "          ";
+        angle_text = angle_prefixtext + String(second_angle) + "          ";
+        if (showvalue_flag)
+          reps_text = reps_prefixtext + String(reps_total) + "          ";
+        else
+          reps_text = reps_prefixtext + "Enter to set";
+      }
+    }
+    else if (mode == 4)
     {
       if (sub_mode == 1)
       {
@@ -287,84 +335,49 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
         excercise_text = "  Enter to capture";
         reps_text = "    second angle    ";
       }
-      // Mode 1 = excercise page
-      else if (mode == 1)
-      {
-        //sub_mode 1 = haven't started excercise
-        if (sub_mode == 1)
-        {
-          excercise_text = start_excercise_text;
-          reps_text = reps_prefixtext + String(reps_total);
-          angle_text = angle_prefixtext + String(angle_range);
-          speed_text = speed_prefixtext + String(speed);
-        }
-
-        // sub_mode 2 = started excercise already
-        else if (sub_mode == 2)
-        {
-          excercise_text = stop_excercise_text;
-          reps_text = reps_prefixtext + String(reps_current);
-          angle_text = angle_prefixtext + String(angle_range);
-          speed_text = speed_prefixtext + String(speed);
-        }
-      }
-    }
-  }
-  else if (editing_mode == 1)
-  {
-    if (mode==2)
-    {
-      excercise_text = "Editing Speed";
-      reps_text = reps_prefixtext + String(reps_total);
-      angle_text = angle_prefixtext + String(angle_range);
-      if (showvalue_flag)
-        speed_text = speed_prefixtext + String(speed);
-      else
-        speed_text = speed_prefixtext + "Enter to set";
-    }
-    else if (mode == 3)
-    {
-      excercise_text = "Editing REPS";
-      speed_text = speed_prefixtext += String(speed);
-      angle_text = angle_prefixtext += String(angle_range);
-      if (showvalue_flag)
-        reps_text = reps_prefixtext += String(reps_total);
-      else
-        reps_text = reps_prefixtext += "Enter to set";
-    }
-    else if (mode == 4)
-    {
-      excercise_text = "Editing angle";
-      speed_text = speed_prefixtext += String(speed);
-      reps_text = reps_prefixtext += String(angle_range);
-      if (showvalue_flag)
-        angle_text = angle_prefixtext += String(angle_range);
-      else
-        angle_text = angle_prefixtext += "Enter to set";
     }
   }
 
   else if (editing_mode == 2)
   {
-    speed_text = speed_prefixtext += String(speed);
-    reps_text = reps_prefixtext += String(reps_total);
-    angle_text = angle_prefixtext += String(angle_range);
-    if (mode==1)
-    {
-      excercise_text = "Enter to go back";
-    }
-    
     if (mode==2)
     {
-      excercise_text = "Enter to set Speed";
+      if (sub_mode == 1)
+      {
+        excercise_text = "Enter to set Speed  ";
+        reps_text = reps_prefixtext + String(reps_total) + "          ";
+        angle_text = angle_prefixtext + String(second_angle) + "          ";
+        if (showvalue_flag)
+          speed_text = speed_prefixtext + String(speed) + "          ";
+        else
+          speed_text = speed_prefixtext + "          ";
+      }
     }
     else if (mode == 3)
     {
-      excercise_text = "Enter to set REPS";
+      if (sub_mode == 1)
+      {
+        excercise_text = "Enter to set REPS   ";
+        speed_text = speed_prefixtext + String(speed) + "          ";
+        angle_text = angle_prefixtext + String(second_angle) + "          ";
+        if (showvalue_flag)
+          reps_text = reps_prefixtext + String(reps_total) + "          ";
+        else
+          reps_text = reps_prefixtext + "          ";
+      }
     }
     else if (mode == 4)
     {
-      excercise_text = "Enter to set angle";
+      if (sub_mode == 1)
+      {
+        excercise_text = "Enter to set angle  ";
+        speed_text = speed_prefixtext + String(speed) + "          ";
+        reps_text = reps_prefixtext + String(reps_total) + "          ";
+        if (showvalue_flag)
+          angle_text = angle_prefixtext + String(second_angle) + "     ";
+        else
+          angle_text = angle_prefixtext + "          ";
+      }
     }
   }
 
@@ -381,11 +394,10 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
 // need to constantly read the new speed_update variable in the menu to show the changes
 // to allow up and down button to change speed variable everytime they are pressed
 // enter key to lock in the speed (mapped to 100 for stepper)
-
 void mode_2()
 {
   while (1) {
-    print_mainscreen(1,2,0);
+    print_mainscreen(1,2,1);
     if(up_button_toggle()){
       if(0<speed && speed<10){
       speed+=1;
@@ -404,11 +416,10 @@ void mode_2()
 }
 
 //change reps by +-, enter to save into "rep" variable
-
 void mode_3()
 {
   while (1) {
-    print_mainscreen(1,3,0);
+    print_mainscreen(1,3,1);
     if(up_button_toggle()){
       if(0<reps_total && reps_total<30){
         reps_total+=1;
@@ -428,14 +439,16 @@ void mode_3()
 void mode_4()
 {
   if (first_angle == -1){
+    Serial.print("ddd");
     print_mainscreen(0, 4, 1);
-    store_angle(&first_angle);
+    store_angle(&first_angle, 1);
   }
   if (second_angle == -1){
     print_mainscreen(0, 4, 2);
-    store_angle(&second_angle);
+    store_angle(&second_angle, 2);
   }
-  angle_range = round(second_angle-first_angle);
+  Serial.print(second_angle);
+  // angle_range = round(second_angle-first_angle);
 }
 
 bool blink_value_flag(unsigned long interval)
@@ -452,29 +465,29 @@ bool blink_value_flag(unsigned long interval)
 
 // Input: address of angle variable to be updated
 // Output: None, updates angle at input address with the current roll_angle
-void store_angle(float *angle)
+void store_angle(float *angle, int angle_num)
 {
+  int count = 0;
  while(1)
   {
-    current_arm_angle = update_angle();
-    if (enter_button_toggle()){
+    count +=1;
+    update_angle();
+    if (enter_button_toggle() && count > 5){
+      Serial.print("sss");
       *angle = current_arm_angle;
       break;
     }
+    else
+      print_mainscreen(1, 4, angle_num);
+    Serial.println(current_arm_angle);
   }
 }
 
 // INPUT: None
 // Output: Once function is called, take in a sensor reading and put it in a buffer, and return the average of all readings in the buffer
-int update_angle()
-{
-  int WINDOW_SIZE = 5;
-  int INDEX = 0;
-  int VALUE = 0;
-  int SUM = 0;
-  int READINGS[WINDOW_SIZE];
-  int AVERAGED = 0;
 
+void update_angle()
+{
   SUM = SUM - READINGS[INDEX];
   VALUE = analogRead(ANGLE_PIN);
   READINGS[INDEX] = VALUE;           // Add the newest reading to the window
@@ -482,6 +495,5 @@ int update_angle()
   INDEX = (INDEX+1) % WINDOW_SIZE;   // Increment the index, and wrap to 0 if it exceeds the window size
 
   AVERAGED = SUM / WINDOW_SIZE;      // Divide the sum of the window by the window size for the result
-
-  return AVERAGED;
+  current_arm_angle = constrain(map(AVERAGED,279,416,0,180),0,180);
 }
