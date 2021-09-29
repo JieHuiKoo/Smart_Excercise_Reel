@@ -3,196 +3,98 @@
 // ================================================================
 #include <Servo.h>
 #include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include <Arduino.h>
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 // ================================================================
 // ===                      Initialise Pins                     ===
 // ================================================================
-#define INTERRUPT_PIN 12 // use pin 2 on Arduino Uno & most boards for interrupt, INT
 #define LED_PIN 13 // (Arduino is 13)
-#define SERVO_PIN 9
-#define ENTER_BUTTON_PIN 3
-#define UP_BUTTON_PIN 1
-#define DOWN_BUTTON_PIN 2
 
+#define BUZZER_PIN 8
+#define DOWN_BUTTON_PIN 9
+#define DIR_PIN 10
+#define STEP_PIN 11
+#define UP_BUTTON_PIN 12
+#define ENTER_BUTTON_PIN 13
+#define INTERRUPT_PIN 3
+#define ANGLE_PIN 2
 
-// ================================================================
-// ===                      MPU Stuffs                          ===
-// ================================================================
-#include "I2Cdev.h"
-#include "MPU6050_6Axis_MotionApps20.h"
-
-#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-    #include "Wire.h"
-#endif
-
-MPU6050 mpu;
-
-#define OUTPUT_READABLE_YAWPITCHROLL
-
-bool blinkState = false;
-
-// MPU control/status vars
-bool dmpReady = false;  // set true if DMP init was successful
-uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
-uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
-uint16_t fifoCount;     // count of all bytes currently in FIFO
-uint8_t fifoBuffer[64]; // FIFO storage buffer
-
-// orientation/motion vars
-Quaternion q;           // [w, x, y, z]         quaternion container
-VectorInt16 aa;         // [x, y, z]            accel sensor measurements
-VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
-VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
-VectorFloat gravity;    // [x, y, z]            gravity vector
-float euler[3];         // [psi, theta, phi]    Euler angle container
-float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
-
-// packet structure for InvenSense teapot demo
-uint8_t teapotPacket[14] = { '$', 0x02, 0,0, 0,0, 0,0, 0,0, 0x00, 0x00, '\r', '\n' };
-
-// Interrupt Detection Routine
-volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
-void dmpDataReady() {
-    mpuInterrupt = true;
-}
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
 
 // Declare custom functions
-void update_mpu();
-void move_servo(int speed);
-int angle_to_speed(float angle);
-void store_angle(float angle);
+void store_angle(float *angle);
+void mode_2();
+void mode_3();
 void mode_4();
+int up_button_toggle();
+int down_button_toggle();
+int enter_button_toggle();
 void print_ypr();
-String speed_to_text();
+void sound_buzzer();
+void lcd_print();
+int update_angle();
+void print_mainscreen(int editing_mode, int mode, int sub_mode);
 bool blink_value_flag(unsigned long interval);
 
+// LCD Stuff
+String excercise_text;
+String speed_text;
+String reps_text;
+String angle_text;
 
 // Servo Stuff
-Servo reel_servo;
+unsigned long prevStepMicros = 0;
 
 // Button Stuffs
-int new_state;
-int old_state = 0;
+int enter_btn_new_state;
+int enter_btn_old_state = 0;
+
+int down_btn_new_state;
+int down_btn_old_state = 0;
+
+int up_btn_new_state;
+int up_btn_old_state = 0;
 
 // Excercise Stuffs
 bool excercise_in_progress = false;
 float first_angle = -1;
 float second_angle = -1;
+float angle_range = 0;
 int reps_total = 10;
-int reps_current = 0;
-int speed = 0;
+int reps_current = 1;
+int speed = 1;
+int current_arm_angle = 0;
+
+// For blinking when in editing mode
+unsigned long previousBlinkMillis = 0;
+int showvalue_flag = 1;
 
 // Default Mode
 int mode = 4;
-
-// For blinking when in editing mode
-unsigned long previousMillis = 0;
-
-// Initiating Variables for Mode 2 (speed_updating)
-int speed_update = 5;
-
-// Initiating Variables for Mode 3 (rep_updating)
-int rep_update = 10;
-int rep = 10;
 
 void setup() {
 
 	// initialize the LCD
 	lcd.init();
+  lcd.backlight();
+	lcd.print("Booting...");
 
-	// Turn on the blacklight and print a message.
-	lcd.backlight();
-	lcd.print("VV big test");
+  // Initialise buttons
+  pinMode(ENTER_BUTTON_PIN, INPUT);
+  pinMode(UP_BUTTON_PIN, INPUT);
+  pinMode(DOWN_BUTTON_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(DIR_PIN, OUTPUT);
+  pinMode(STEP_PIN, OUTPUT);
+  pinMode(ANGLE_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
 
-    // Initialise servo
-    reel_servo.attach(SERVO_PIN);
-
-    // Initialise buttons
-    pinMode(ENTER_BUTTON_PIN, INPUT);
-    pinMode(UP_BUTTON_PIN, INPUT);
-    pinMode(DOWN_BUTTON_PIN, INPUT);
-
-    // Initialise LED
-    pinMode(LED_PIN, OUTPUT);
-
-    // ========== MPU Initialisation ==========
-    // join I2C bus (I2Cdev library doesn't do this automatically)
-    #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-        Wire.begin();
-        Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
-    #elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
-        Fastwire::setup(400, true);
-    #endif
-
-    // initialize serial communication
-    // (115200 chosen because it is required for Teapot Demo output, but it's
-    // really up to you depending on your project)
-    Serial.begin(9600);
-    while (!Serial); // wait for Leonardo enumeration, others continue immediately
-
-    // NOTE: 8MHz or slower host processors, like the Teensy @ 3.3V or Arduino
-    // Pro Mini running at 3.3V, cannot handle this baud rate reliably due to
-    // the baud timing being too misaligned with processor ticks. You must use
-    // 38400 or slower in these cases, or use some kind of external separate
-    // crystal solution for the UART timer.
-
-    // initialize device
-    Serial.println(F("Initializing I2C devices..."));
-    mpu.initialize();
-    pinMode(INTERRUPT_PIN, INPUT);
-
-    // verify connection
-    Serial.println(F("Testing device connections..."));
-    Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
-
-    // load and configure the DMP
-    Serial.println(F("Initializing DMP..."));
-    devStatus = mpu.dmpInitialize();
-
-    // supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXGyroOffset(220);
-    mpu.setYGyroOffset(76);
-    mpu.setZGyroOffset(-85);
-    mpu.setZAccelOffset(1788); // 1688 factory default for my test chip
-
-    // make sure it worked (returns 0 if so)
-    if (devStatus == 0) {
-        // Calibration Time: generate offsets and calibrate our MPU6050
-        mpu.CalibrateAccel(6);
-        mpu.CalibrateGyro(6);
-        mpu.PrintActiveOffsets();
-        // turn on the DMP, now that it's ready
-        Serial.println(F("Enabling DMP..."));
-        mpu.setDMPEnabled(true);
-
-        // enable Arduino interrupt detection
-        Serial.print(F("Enabling interrupt detection (Arduino external interrupt "));
-        Serial.print(digitalPinToInterrupt(INTERRUPT_PIN));
-        Serial.println(F(")..."));
-        attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), dmpDataReady, RISING);
-        mpuIntStatus = mpu.getIntStatus();
-
-        // set our DMP Ready flag so the main loop() function knows it's okay to use it
-        Serial.println(F("DMP ready! Waiting for first interrupt..."));
-        dmpReady = true;
-
-        // get expected DMP packet size for later comparison
-        packetSize = mpu.dmpGetFIFOPacketSize();
-    } else {
-        // ERROR!
-        // 1 = initial memory load failed
-        // 2 = DMP configuration updates failed
-        // (if it's going to break, usually the code will be 1)
-        Serial.print(F("DMP Initialization failed (code "));
-        Serial.print(devStatus);
-        Serial.println(F(")"));
-    }
+  Serial.begin(9600);
 }
 
 
@@ -200,181 +102,280 @@ void setup() {
 // ================================================================
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
-
+int count = 0;
 void loop() {
-    // If MPU initialisation failed, do not do anything
-    if (!dmpReady)
-    {
-      lcd.print("MPU Initialisation failed.");
-      return;
-    }
+    count += 1;
 
     if (mode == 1)
     {
+      print_mainscreen(0,1,1);
+      // Check for if user wants to change mode
+      if(up_button_toggle() || down_button_toggle())
+      {
+        // Go into loop and ask for edit
+        int choice = 2;
 
+        // Put in a while loop until user makes a choice to edit which mode
+        while(1)
+        {
+          // If upbutton is pressed
+          if (up_button_toggle())
+          {
+            choice += 1;
+            if (choice == 5)
+              choice = 1;
+          }
+          
+          // If down button is pressed
+          else if (down_button_toggle())
+          {
+            choice -= 1;
+            if (choice == 0)
+              choice = 4;
+          }
+
+          if (enter_button_toggle())
+          {
+            if (choice == 2)
+            {
+              mode = 2;
+              break;
+            }
+            else if (choice == 3)
+            {
+              mode = 3;
+              break;
+            }
+            else if (choice == 4)
+            {
+              mode = 4;
+              break;
+            }
+          }
+          print_mainscreen(2, choice,0);
+        }
+      }
     }
     else if (mode == 2)
     {
-
+      mode_2();
+      mode = 1;
     }
 
     else if (mode == 3)
     {
-
+      mode_3();
+      mode = 1;
     }
 
     else if (mode == 4)
     {
-      //mode_4();
+      mode_4();
+      mode = 1;
     }
-
-    update_mpu();
-    print_ypr();
-	lcd.setCursor(0,0);
-    lcd.print(ypr[2]*180/M_PI);
-	// lcd.print("First Angle is: "+ (String)first_angle);
-    // lcd.println("Second Angle is: "+ (String)second_angle);
-    delay(1000);
 }
 
-// Input: float roll_angle
-// Output: int speed of motor
-int angle_to_speed(float roll_angle)
+// Input: None
+// Output: Sounds buzzer for 0.5s
+void sound_buzzer()
 {
-  int speed = (int)roll_angle+90;
-  if ((speed > 0) && (speed < 180))
-  {
-    return roll_angle + 90;
-  }
-  else
-    return 90;
-
+  digitalWrite(BUZZER_PIN, 1);
+  delay(100);
+  digitalWrite(BUZZER_PIN, 0);
 }
 
-// Input: int speed of servo
-// Output: None, makes the servo move at input speed
-void move_servo(int speed)
-{
-  reel_servo.write(speed);
-  Serial.print(speed);
-}
-
-// Input: int button_pin of button to be checked
+// Input: enter_btn_to_be_checked
 // Output: returns int 1 if button is released from being pressed
-int button_toggle(int button_pin)
+int enter_button_toggle()
 {
-  new_state = digitalRead(button_pin);
+  enter_btn_new_state = digitalRead(ENTER_BUTTON_PIN);
 
-  if (old_state == 1 && new_state == 0)
+  if (enter_btn_old_state == 1 && enter_btn_new_state == 0)
   {
-    old_state = new_state;
+    enter_btn_old_state = enter_btn_new_state;
+    sound_buzzer();
     return 1;
   }
   else
   {
-    old_state = new_state;
+    enter_btn_old_state = enter_btn_new_state;
     return 0;
   }
 }
 
-// Input: None
-// Output: None, updates ypr value when called
-void update_mpu()
-{
-  if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer))
-    {
-      mpu.dmpGetQuaternion(&q, fifoBuffer);
-      mpu.dmpGetGravity(&gravity, &q);
-      mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-    }
-}
 
-// Input: address of angle variable to be updated
-// Output: None, updates angle at input address with the current roll_angle
-void store_angle(float *angle)
+// Input: up_btn_to_be_checked
+// Output: returns int 1 if button is released from being pressed
+int up_button_toggle()
 {
- while(1)
+  up_btn_new_state = digitalRead(UP_BUTTON_PIN);
+
+  if (up_btn_old_state == 1 && up_btn_new_state == 0)
   {
-    update_mpu();
-    if (button_toggle(ENTER_BUTTON_PIN)){
-      *angle = ypr[2] * 180/M_PI;
-      Serial.println("Button Pressed: " + String(*angle));
-      break;
-    }
+    up_btn_old_state = up_btn_new_state;
+    sound_buzzer();
+    return 1;
+  }
+  else
+  {
+    up_btn_old_state = up_btn_new_state;
+    return 0;
   }
 }
 
-// Input: None
-// Output: None, prints ypr on a single line
-void print_ypr()
+// Input: down_btn_to_be_checked
+// Output: returns int 1 if button is released from being pressed
+int down_button_toggle()
 {
-  Serial.print("ypr\t");
-  Serial.print(ypr[0] * 180/M_PI);
-  Serial.print("\t");
-  Serial.print(ypr[1] * 180/M_PI);
-  Serial.print("\t");
-  Serial.println(ypr[2] * 180/M_PI);
+  down_btn_new_state = digitalRead(DOWN_BUTTON_PIN);
+
+  if (down_btn_old_state == 1 && down_btn_new_state == 0)
+  {
+    down_btn_old_state = down_btn_new_state;
+    sound_buzzer();
+    return 1;
+  }
+  else
+  {
+    down_btn_old_state = down_btn_new_state;
+    return 0;
+  }
 }
 
 // Input:
-// 1) int editing_mode, Takes in whether editing mode is 1 or 0, to turn on blinking
+// 1) int editing_mode, Takes in editing mode is 0 = not editing, 1 = editing mode, 2 = choosing mode
 // 2) int mode, For selecting which mode to blink when in editing mode
 // 3) int rep_in_progress, To change output text of Press enter to start/stop excercise
-String output_text = ""; //20 char only!!!!!!!
-String excercise_text = "";
-String start_excercise_text = "Press ENTER to start";
-String stop_excercise_text = "Press ENTER to stop excercise";
-String speed_text = "";
-String speed_prefixtext = "Speed: ";
-String reps_text = "";
-String reps_prefixtext = "REPS: ";
-String angle_text = "";
-String angle_prefixtext = "Angle: ";
-
-int showvalue_flag = 1;
-void print_mainscreen(bool editing_mode, int mode, bool excercise_in_progress)
+void print_mainscreen(int editing_mode, int mode, int sub_mode)
 {
-  if (editing_mode && blink_value_flag(500))
+  excercise_text = "                    ";
+  speed_text = "                    ";
+  reps_text = "                    ";
+  angle_text = "                    ";
+
+  // Clear screen first
+  lcd.setCursor(0,0);
+  lcd.print(excercise_text);
+  lcd.setCursor(0,1);
+  lcd.print(speed_text);
+  lcd.setCursor(0,2);
+  lcd.print(reps_text);
+  lcd.setCursor(0,3);
+  lcd.print(angle_text);
+  String start_excercise_text = "Press ENTER to start";
+  String stop_excercise_text = "Press ENTER to stop excercise";
+  String speed_prefixtext = "Speed: ";
+  String reps_prefixtext = "REPS: ";
+  String angle_prefixtext = "Angle: ";
+
+  if (editing_mode && blink_value_flag(1000))
   {
     showvalue_flag = !showvalue_flag;
   }
 
-  if (!editing_mode)
+  if (editing_mode == 0)
   {
-    if (excercise_in_progress)
-      excercise_text = stop_excercise_text;
-    else
-      excercise_text = start_excercise_text;
-    speed_text = speed_prefixtext += speed_to_text();
-    reps_text = reps_prefixtext += String(reps_total);
-    angle_text = angle_prefixtext += String(round(second_angle - first_angle));
+    if (mode == 4)
+    {
+      if (sub_mode == 1)
+      {
+        excercise_text = "  Enter to capture";
+        reps_text = "    first angle     ";
+      }
+      else if (sub_mode == 2)
+      {
+        excercise_text = "  Enter to capture";
+        reps_text = "    second angle    ";
+      }
+      // Mode 1 = excercise page
+      else if (mode == 1)
+      {
+        //sub_mode 1 = haven't started excercise
+        if (sub_mode == 1)
+        {
+          excercise_text = start_excercise_text;
+          reps_text = reps_prefixtext + String(reps_total);
+          angle_text = angle_prefixtext + String(angle_range);
+          speed_text = speed_prefixtext + String(speed);
+        }
+
+        // sub_mode 2 = started excercise already
+        else if (sub_mode == 2)
+        {
+          excercise_text = stop_excercise_text;
+          reps_text = reps_prefixtext + String(reps_current);
+          angle_text = angle_prefixtext + String(angle_range);
+          speed_text = speed_prefixtext + String(speed);
+        }
+      }
+    }
   }
-  else
+  else if (editing_mode == 1)
   {
     if (mode==2)
     {
+      excercise_text = "Editing Speed";
+      reps_text = reps_prefixtext + String(reps_total);
+      angle_text = angle_prefixtext + String(angle_range);
       if (showvalue_flag)
-        speed_text = speed_prefixtext += speed_to_text();
+        speed_text = speed_prefixtext + String(speed);
       else
-        speed_text = speed_prefixtext;
+        speed_text = speed_prefixtext + "Enter to set";
     }
     else if (mode == 3)
     {
+      excercise_text = "Editing REPS";
+      speed_text = speed_prefixtext += String(speed);
+      angle_text = angle_prefixtext += String(angle_range);
       if (showvalue_flag)
         reps_text = reps_prefixtext += String(reps_total);
       else
-        reps_text = reps_prefixtext;
+        reps_text = reps_prefixtext += "Enter to set";
     }
     else if (mode == 4)
     {
+      excercise_text = "Editing angle";
+      speed_text = speed_prefixtext += String(speed);
+      reps_text = reps_prefixtext += String(angle_range);
       if (showvalue_flag)
-        angle_text = angle_prefixtext += "Enter to edit";
+        angle_text = angle_prefixtext += String(angle_range);
       else
-        angle_text = angle_prefixtext;
+        angle_text = angle_prefixtext += "Enter to set";
     }
   }
 
-  output_text = excercise_text + "\n" + speed_text +  "\n" + reps_text +  "\n" + angle_text;
+  else if (editing_mode == 2)
+  {
+    speed_text = speed_prefixtext += String(speed);
+    reps_text = reps_prefixtext += String(reps_total);
+    angle_text = angle_prefixtext += String(angle_range);
+    if (mode==1)
+    {
+      excercise_text = "Enter to go back";
+    }
+    
+    if (mode==2)
+    {
+      excercise_text = "Enter to set Speed";
+    }
+    else if (mode == 3)
+    {
+      excercise_text = "Enter to set REPS";
+    }
+    else if (mode == 4)
+    {
+      excercise_text = "Enter to set angle";
+    }
+  }
+
+  lcd.setCursor(0,0);
+  lcd.print(excercise_text);
+  lcd.setCursor(0,1);
+  lcd.print(speed_text);
+  lcd.setCursor(0,2);
+  lcd.print(reps_text);
+  lcd.setCursor(0,3);
+  lcd.print(angle_text);
 }
 
 // need to constantly read the new speed_update variable in the menu to show the changes
@@ -384,18 +385,19 @@ void print_mainscreen(bool editing_mode, int mode, bool excercise_in_progress)
 void mode_2()
 {
   while (1) {
-    if(button_toggle(UP_BUTTON_PIN)){
-      if(0<speed_update && speed_update<10){
-      speed_update+=1;
+    print_mainscreen(1,2,0);
+    if(up_button_toggle()){
+      if(0<speed && speed<10){
+      speed+=1;
       }
     }
-    if(button_toggle(DOWN_BUTTON_PIN)){
-      if(0<speed_update && speed_update<10){
-      speed_update-=1;
+    else if(down_button_toggle()){
+      if(0<speed && speed<10){
+      speed-=1;
       }
     }
-    if(button_toggle(ENTER_BUTTON_PIN)){
-      speed = map(speed_update, 0,10,0,100);
+    else if(enter_button_toggle()){
+      speed = map(speed, 0,10,0,100);
       break;
     }
   }
@@ -406,59 +408,80 @@ void mode_2()
 void mode_3()
 {
   while (1) {
-    if(button_toggle(UP_BUTTON_PIN)){
-      if(0<rep_update && rep_update<30){
-      rep_update+=1;
+    print_mainscreen(1,3,0);
+    if(up_button_toggle()){
+      if(0<reps_total && reps_total<30){
+        reps_total+=1;
       }
     }
-    if(button_toggle(DOWN_BUTTON_PIN)){
-      if(0<rep_update && rep_update<30){
-      rep_update-=1;
+    else if(down_button_toggle()){
+      if(0<reps_total && reps_total<30){
+        reps_total-=1;      
       }
     }
-    if(button_toggle(ENTER_BUTTON_PIN)){
-      rep = rep_update;
+    else if(enter_button_toggle()){
       break;
     }
   }
 }
 
-
 void mode_4()
 {
   if (first_angle == -1){
-    Serial.print("Waiting for button press 1\n");
+    print_mainscreen(0, 4, 1);
     store_angle(&first_angle);
   }
   if (second_angle == -1){
-    Serial.print("Waiting for button press 2\n");
+    print_mainscreen(0, 4, 2);
     store_angle(&second_angle);
   }
-}
-
-String speed_to_text()
-{
-  int speed1 = 5;
-  int speed2 = 10;
-  int speed3 = 15;
-  if (speed==speed1)
-    return "LOW";
-  else if (speed==speed2)
-    return "MED";
-  else if (speed==speed3)
-    return "HIGH";
-  else
-    return "";
+  angle_range = round(second_angle-first_angle);
 }
 
 bool blink_value_flag(unsigned long interval)
 {
   unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval)
+  if (currentMillis - previousBlinkMillis >= interval)
   {
-    previousMillis = currentMillis;
+    previousBlinkMillis = currentMillis;
   return true;
   }
   else
     return false;
+}
+
+// Input: address of angle variable to be updated
+// Output: None, updates angle at input address with the current roll_angle
+void store_angle(float *angle)
+{
+ while(1)
+  {
+    current_arm_angle = update_angle();
+    if (enter_button_toggle()){
+      *angle = current_arm_angle;
+      break;
+    }
+  }
+}
+
+// INPUT: None
+// Output: Once function is called, take in a sensor reading and put it in a buffer, and return the average of all readings in the buffer
+int update_angle()
+{
+  int WINDOW_SIZE = 5;
+  int INDEX = 0;
+  int VALUE = 0;
+  int SUM = 0;
+  int READINGS[WINDOW_SIZE];
+  int AVERAGED = 0;
+
+  SUM = SUM - READINGS[INDEX];
+  VALUE = analogRead(ANGLE_PIN);
+  READINGS[INDEX] = VALUE;           // Add the newest reading to the window
+  SUM = SUM + VALUE;                 // Add the newest reading to the sum
+  INDEX = (INDEX+1) % WINDOW_SIZE;   // Increment the index, and wrap to 0 if it exceeds the window size
+
+  AVERAGED = SUM / WINDOW_SIZE;      // Divide the sum of the window by the window size for the result
+
+  return AVERAGED;
 }
