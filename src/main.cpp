@@ -44,7 +44,7 @@ void lcd_print();
 void update_angle();
 void print_mainscreen(int editing_mode, int mode, int sub_mode);
 bool blink_value_flag(unsigned long interval);
-void stepper(int direction);
+void move_stepper(int direction);
 
 
 // LCD Stuff
@@ -286,7 +286,7 @@ int up_button_press()
 // Output: returns int 1 if button is pressed and held
 int down_button_press()
 {
-  down_btn_new_state = digitalRead(UP_BUTTON_PIN);
+  down_btn_new_state = digitalRead(DOWN_BUTTON_PIN);
 
   if (down_btn_old_state == 1 && down_btn_new_state == 1)
   {
@@ -313,7 +313,7 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
   String speed_prefixtext = "Speed: ";
   String reps_prefixtext = "REPS: ";
   String angle_prefixtext = "Angle: ";
-	String blank = "                    "
+	String blank = "                    ";
 
   if (blink_value_flag(700))
   {
@@ -379,9 +379,9 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
         reps_text = reps_prefixtext + String(reps_total) + "          ";
         angle_text = angle_prefixtext + String(second_angle) + "          ";
         if (showvalue_flag)
-          speed_text = speed_prefixtext + String(speed) + "          ";
+          speed_text = speed_prefixtext + String(speed) + "           ";
         else
-          speed_text = speed_prefixtext + "Enter to set";
+          speed_text = speed_prefixtext + "                ";
       }
     }
     else if (mode == 3)
@@ -394,7 +394,7 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
         if (showvalue_flag)
           reps_text = reps_prefixtext + String(reps_total) + "          ";
         else
-          reps_text = reps_prefixtext + "Enter to set";
+          reps_text = reps_prefixtext + "                ";
       }
     }
     else if (mode == 4)
@@ -403,15 +403,15 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
       {
         excercise_text = "   Use up/down to   ";
         speed_text = " change FIRST angle ";
-				reps_text = "    Enter to Save   "
-				angle_text = "        " + string(current_arm_angle) +"        ";
+				reps_text = "    Enter to Save   ";
+				angle_text = "        " + String(current_arm_angle) +"        ";
       }
       else if (sub_mode == 2)
       {
 				excercise_text = "   Use up/down to   ";
         speed_text = "change SECOND angle ";
-				reps_text = "   Enter to Save    "
-				angle_text = "        " + string(current_arm_angle) +"        ";
+				reps_text = "   Enter to Save    ";
+				angle_text = "        " + String(current_arm_angle) +"        ";
       }
     }
   }
@@ -471,12 +471,14 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
 
 void mode_1()
 {
-	direction_motor = 0
+	direction_motor = 0;
 	while(1){
-		while(current_arm_angle <= second_angle && direction_motor == 0){
-			//run stepper motor forward (direction_motor: 0 is forward)
-			stepper(direction_motor);
-			print_mainscreen(0,1,2);
+    update_angle();
+		while(current_arm_angle < second_angle && direction_motor == 0){
+			update_angle();
+      //run stepper motor forward (direction_motor: 0 is forward)
+			move_stepper(direction_motor);
+			// print_mainscreen(0,1,2);
 
 			//press enter to stop function
 			if(enter_button_toggle()){
@@ -488,22 +490,24 @@ void mode_1()
 				delay(100);
 				sound_buzzer();
 				//return motor to starting position
-				stepper(direction_motor);
-				break
+				move_stepper(direction_motor);
+				break;
 			}
 
-			// if reach top
-			if(current_arm_angle == second_angle){
-				reps_current += 1; // increase reps count by 1
-				sound_buzzer(); // sound the buzzer
-				direction_motor = 1; // change direction
-				break
-			}
+			
 		}
+    // if reach top
+    if(current_arm_angle < second_angle + 3 && current_arm_angle > second_angle -3){
+      reps_current += 1; // increase reps count by 1
+      sound_buzzer(); // sound the buzzer
+      direction_motor = 1; // change direction
+      break;
+    }
 
-		while(current_arm_angle >= first_angle && direction_motor == 1){
+		while(current_arm_angle > first_angle && direction_motor == 1){
+      update_angle();
 			//run stepper motor backward (direction_motor: 1 is forward)
-			stepper(direction_motor);
+			move_stepper(direction_motor);
 			print_mainscreen(0,1,2);
 
 			//press enter to stop function
@@ -516,30 +520,30 @@ void mode_1()
 				delay(100);
 				sound_buzzer();
 				//return motor to starting position
-				stepper(direction_motor);
-				break
-			}
-
-			// if reach bottom
-			if(current_arm_angle == first_angle){
-				sound_buzzer(); // sound the buzzer
-				direction_motor = 0; // change direction
-				break
+				move_stepper(direction_motor);
+				break;
 			}
 		}
+
+    // if reach bottom
+    if(current_arm_angle < first_angle + 3 && current_arm_angle > first_angle - 3){
+      sound_buzzer(); // sound the buzzer
+      direction_motor = 0; // change direction
+      break;
+    }
 
 		if(reps_current == reps_total){
 			print_mainscreen(0,1,3);
 			sound_buzzer();
 			sound_buzzer();
 			delay(3000);
-			break
+			break;
 		}
 
-		if(direction_motor = 2){
+		if(direction_motor == 2){
 			print_mainscreen(0,1,3);
 			delay(3000);
-			break
+			break;
 		}
 	}
 
@@ -556,12 +560,12 @@ void mode_2()
   while (1) {
     print_mainscreen(1,2,1);
     if(up_button_toggle()){
-      if(0<speed && speed<10){
+      if(0<=speed && speed<10){
       speed+=1;
       }
     }
     else if(down_button_toggle()){
-      if(0<speed && speed<10){
+      if(1<speed && speed<=10){
       speed-=1;
       }
     }
@@ -578,12 +582,12 @@ void mode_3()
   while (1) {
     print_mainscreen(1,3,1);
     if(up_button_toggle()){
-      if(0<reps_total && reps_total<30){
+      if(0<=reps_total && reps_total<30){
         reps_total+=1;
       }
     }
     else if(down_button_toggle()){
-      if(0<reps_total && reps_total<30){
+      if(1<reps_total && reps_total<=30){
         reps_total-=1;
       }
     }
@@ -592,7 +596,8 @@ void mode_3()
     }
   }
 }
-
+int forward_speed = 1400;
+int reverse_speed = -1400;
 void mode_4()
 {
 	count = 0;
@@ -603,7 +608,22 @@ void mode_4()
 
 		while(up_button_press()){
 			print_mainscreen(1, 4, 1);
-			stepper(0);
+			// steps per second
+		  stepper.setSpeed(forward_speed);
+	    // Step the motor with a constant speed as set by setSpeed():
+	    stepper.runSpeed();
+			update_angle();
+		}
+    while(down_button_press()){
+			//print_mainscreen(1, 4, 1);
+			// lcd.setCursor(3,9);
+      // lcd.print(current_arm_angle);
+      
+      
+      
+      stepper.setSpeed(reverse_speed);
+	    // Step the motor with a constant speed as set by setSpeed():
+	    stepper.runSpeed();
 			update_angle();
 		}
 
@@ -619,9 +639,18 @@ void mode_4()
 		count+=1;
 		update_angle();
 
-		while(down_button_press()){
+		while(up_button_press()){
 			print_mainscreen(1, 4, 2);
-			stepper(1);
+			stepper.setSpeed(forward_speed);
+	    // Step the motor with a constant speed as set by setSpeed():
+	    stepper.runSpeed();
+			update_angle();
+		}
+    while(down_button_press()){
+			print_mainscreen(1, 4, 2);
+			stepper.setSpeed(reverse_speed);
+	    // Step the motor with a constant speed as set by setSpeed():
+	    stepper.runSpeed();
 			update_angle();
 		}
 
@@ -630,17 +659,6 @@ void mode_4()
       break;
     }
 	}
-  // if (first_angle == -1){
-  //   Serial.print("ddd");
-  //   print_mainscreen(0, 4, 1);
-  //   store_angle(&first_angle, 1);
-  // }
-  // if (second_angle == -1){
-  //   print_mainscreen(0, 4, 2);
-  //   store_angle(&second_angle, 2);
-  // }
-  // Serial.print(second_angle);
-  // angle_range = round(second_angle-first_angle);
 }
 
 bool blink_value_flag(unsigned long interval)
@@ -655,26 +673,6 @@ bool blink_value_flag(unsigned long interval)
     return false;
 }
 
-// Input: address of angle variable to be updated
-// Output: None, updates angle at input address with the current roll_angle
-// void store_angle(float *angle, int angle_num)
-// {
-//   int count = 0;
-//  while(1)
-//   {
-//     count +=1;
-//     update_angle();
-//
-//     if (enter_button_toggle() && count > 5){
-//       *angle = current_arm_angle;
-//       break;
-//     }
-//     else
-//       print_mainscreen(1, 4, angle_num);
-//     Serial.println(current_arm_angle);
-//   }
-// }
-
 // INPUT: None
 // Output: Once function is called, take in a sensor reading and put it in a buffer, and return the average of all readings in the buffer
 
@@ -687,10 +685,10 @@ void update_angle()
   INDEX = (INDEX+1) % WINDOW_SIZE;   // Increment the index, and wrap to 0 if it exceeds the window size
 
   AVERAGED = SUM / WINDOW_SIZE;      // Divide the sum of the window by the window size for the result
-  current_arm_angle = constrain(map(AVERAGED,279,416,0,180),0,180);
+  current_arm_angle = constrain(map(AVERAGED,277,401,0,180),0,180);
 }
 
-void stepper(int direction)
+void move_stepper(int direction)
 { //forward direction = 0
 	if(direction == 0){
 		// steps per second
