@@ -204,7 +204,7 @@ void loop() {
 // Output: Sounds buzzer for 0.5s
 void sound_buzzer()
 {
-  //digitalWrite(BUZZER_PIN, 1);
+  digitalWrite(BUZZER_PIN, 1);
   delay(100);
   digitalWrite(BUZZER_PIN, 0);
 }
