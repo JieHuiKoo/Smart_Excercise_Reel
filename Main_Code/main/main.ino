@@ -105,10 +105,10 @@ int mode = 4;
 
 void setup() {
 
-	// initialize the LCD
-	lcd.init();
+  // initialize the LCD
+  lcd.init();
   lcd.backlight();
-	lcd.print("Booting...");
+  lcd.print("Booting...");
 
   // Initialise buttons
   pinMode(ENTER_BUTTON_PIN, INPUT);
@@ -122,8 +122,8 @@ void setup() {
 
   Serial.begin(9600);
 
-	//setting stepper's max speed and acceleration
-	stepper.setMaxSpeed(maxspeed);
+  //setting stepper's max speed and acceleration
+  stepper.setMaxSpeed(maxspeed);
   stepper.setAcceleration(100);
 }
 
@@ -140,7 +140,7 @@ void loop() {
       print_mainscreen(0,1,1);
       if (enter_button_toggle())
       {
-				mode_1();
+        mode_1();
         reps_current = 0;
         mode = 1;
       }
@@ -357,7 +357,7 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
       //sub_mode 1 = haven't started excercise
       if (sub_mode == 1)
       {
-				if (showvalue_flag)
+        if (showvalue_flag)
           excercise_text = start_excercise_text;
         else
           excercise_text = blank;
@@ -375,7 +375,7 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
         speed_text = speed_prefixtext + String(speed) + "            ";
       }
 
-			// sub_mode 3 = finished excercise
+      // sub_mode 3 = finished excercise
       else if (sub_mode == 3)
       {
         excercise_text = finished_excercise_text;
@@ -384,18 +384,18 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
         speed_text = speed_prefixtext + String(speed) + "            ";;
       }
 
-			// sub mode 4 (test for lcd screen with updapted reps and moving down @ speed) (shown after one hand is pulled up)
-			// angle does not change, stays at second_angle
-			else if (sub_mode == 4)
+      // sub mode 4 (test for lcd screen with updapted reps and moving down @ speed) (shown after one hand is pulled up)
+      // angle does not change, stays at second_angle
+      else if (sub_mode == 4)
       {
         excercise_text = stop_excercise_text;
         reps_text = reps_prefixtext + String(reps_current) + '/'+ String(reps_total) + "      ";
         angle_text = angle_prefixtext + " Moving Down ";
         speed_text = speed_prefixtext + String(speed);
       }
-			// sub mode 5 (test for moving up @ speed) (shown after hand is returned to neutral position)
-			// angle does not change, stays at second_angle
-			else if (sub_mode == 5)
+      // sub mode 5 (test for moving up @ speed) (shown after hand is returned to neutral position)
+      // angle does not change, stays at second_angle
+      else if (sub_mode == 5)
       {
         excercise_text = stop_excercise_text;
         reps_text = reps_prefixtext + String(reps_current) + '/'+ String(reps_total) + "      ";
@@ -440,22 +440,22 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
       {
         excercise_text = "   Use up/down to   ";
         speed_text = " Change FIRST angle ";
-				reps_text = "   Enter to  Save   ";
-				angle_text = "    " + String((int)current_arm_angle) + "  ||  " + "NIL   ";
+        reps_text = "   Enter to  Save   ";
+        angle_text = "    " + String((int)current_arm_angle) + "  ||  " + "NIL   ";
       }
       else if (sub_mode == 2)
       {
-				excercise_text = "   Use up/down to   ";
+        excercise_text = "   Use up/down to   ";
         speed_text = "Change SECOND  angle";
-				reps_text = "   Enter to  Save   ";
-				angle_text = "    " + String((int)first_angle) + "  ||  " + String((int)current_arm_angle)+ "  ";
+        reps_text = "   Enter to  Save   ";
+        angle_text = "    " + String((int)first_angle) + "  ||  " + String((int)current_arm_angle)+ "  ";
       }
       else if (sub_mode == 3)
       {
-				excercise_text = blank;
+        excercise_text = blank;
         speed_text =  "   Invalid angle!   ";
-				reps_text =   "     Try again!     ";
-				angle_text =  blank;
+        reps_text =   "     Try again!     ";
+        angle_text =  blank;
       }
     }
   }
@@ -515,8 +515,8 @@ void print_mainscreen(int editing_mode, int mode, int sub_mode)
 
 void mode_1()
 {
-	direction_motor = 0;
-	while(1){
+  direction_motor = 0;
+  while(1){
     update_angle();
     // We need this at the start so that the lcd screen immediately updates when we start the excercise
     if (direction_motor == 0)
@@ -525,67 +525,67 @@ void mode_1()
       print_mainscreen(0,1,4);
     
     // if reach top
-		// one alternative for motor code is to use the return position code to return hand to bottom
+    // one alternative for motor code is to use the return position code to return hand to bottom
     if(current_arm_angle < second_angle + 3 && current_arm_angle > second_angle -3 && direction_motor == 0){
       reps_current += 1; // increase reps count by 1
       sound_buzzer(); // sound the buzzer
       direction_motor = 1; // change direction
-			// show lcd screen with rep + 1, change angle text to moving down?
-			print_mainscreen(0,1,4);
+      // show lcd screen with rep + 1, change angle text to moving down?
+      print_mainscreen(0,1,4);
     }
 
     //if reach bottom
     if(current_arm_angle < first_angle + 3 && current_arm_angle > first_angle - 3 && direction_motor == 1){
       sound_buzzer(); // sound the buzzer
       direction_motor = 0; // change direction
-			//  change angle text to moving up
-			print_mainscreen(0,1,5);
+      //  change angle text to moving up
+      print_mainscreen(0,1,5);
     }
 
-		while(current_arm_angle < second_angle && direction_motor == 0){
-			update_angle();
-      //run stepper motor forward (direction_motor: 0 is forward)
-			move_stepper(direction_motor);
-
-			//press enter to stop function
-			if(enter_button_toggle()){
-				direction_motor = 2;
-				//return motor to starting position
-				move_stepper(direction_motor);
-			}
-		}
-
-		while(current_arm_angle > first_angle && direction_motor == 1){
+    while(current_arm_angle < second_angle && direction_motor == 0){
       update_angle();
-			//run stepper motor backward (direction_motor: 1 is forward)
-			move_stepper(direction_motor);
-			// print_mainscreen(0,1,2);
+      //run stepper motor forward (direction_motor: 0 is forward)
+      move_stepper(direction_motor);
 
-			//press enter to stop function
-			if(enter_button_toggle()){
-				direction_motor = 2;
-				//return motor to starting position
-				move_stepper(direction_motor);
-			}
-		}
+      //press enter to stop function
+      if(enter_button_toggle()){
+        direction_motor = 2;
+        //return motor to starting position
+        move_stepper(direction_motor);
+      }
+    }
 
-		if(direction_motor == 2){
+    while(current_arm_angle > first_angle && direction_motor == 1){
+      update_angle();
+      //run stepper motor backward (direction_motor: 1 is forward)
+      move_stepper(direction_motor);
+      // print_mainscreen(0,1,2);
+
+      //press enter to stop function
+      if(enter_button_toggle()){
+        direction_motor = 2;
+        //return motor to starting position
+        move_stepper(direction_motor);
+      }
+    }
+
+    if(direction_motor == 2){
       print_mainscreen(0,1,3);
-			//sound buzzer end
+      //sound buzzer end
       sound_end_excercise_buzzer();
       delay(3000);
-			break;
-		}
+      break;
+    }
 
     if(reps_current == reps_total){
       delay(100);
-			print_mainscreen(0,1,3);
+      print_mainscreen(0,1,3);
       sound_end_excercise_buzzer();
       reps_current = 0;
-			delay(3000);
-			break;
-		}
-	}
+      delay(3000);
+      break;
+    }
+  }
 }
 
 
@@ -608,8 +608,8 @@ void mode_2()
       }
     }
     else if(enter_button_toggle()){
-			//motor_speed is speed variable to use in motor, speed is display text
-			motor_speed = map(speed, 1,10,800,1400);
+      //motor_speed is speed variable to use in motor, speed is display text
+      motor_speed = map(speed, 1,10,800,1400);
       break;
     }
   }
@@ -653,7 +653,7 @@ void mode_4()
         // Step the motor with a constant speed as set by setSpeed():
         stepper.runSpeed();
         update_angle();
-		  }
+      }
 
       while(down_button_press())
       {
@@ -675,7 +675,7 @@ void mode_4()
         stepper.setCurrentPosition(0);
         break;
       }
-	  }
+    }
 
     while(1)
     {
@@ -750,30 +750,30 @@ void update_angle()
 
 void move_stepper(int direction)
 { //forward direction = 0
-	if(direction == 0){
-		// steps per second
-		stepper.setSpeed(motor_speed);
-	  // Step the motor with a constant speed as set by setSpeed():
-	  stepper.runSpeed();
-	}
+  if(direction == 0){
+    // steps per second
+    stepper.setSpeed(motor_speed);
+    // Step the motor with a constant speed as set by setSpeed():
+    stepper.runSpeed();
+  }
 
-	// backward direction = 1
-	else if(direction == 1){
-			// steps per second
-			stepper.setSpeed(-motor_speed);
-			// Step the motor with a constant speed as set by setSpeed():
-			stepper.runSpeed();
-	}
+  // backward direction = 1
+  else if(direction == 1){
+      // steps per second
+      stepper.setSpeed(-motor_speed);
+      // Step the motor with a constant speed as set by setSpeed():
+      stepper.runSpeed();
+  }
 
-	// direction = 2 for reset motor to original position
-	else if(direction == 2){
-		stepper.moveTo(0);
+  // direction = 2 for reset motor to original position
+  else if(direction == 2){
+    stepper.moveTo(0);
     while (stepper.distanceToGo() != 0){
-			stepper.setSpeed(slow_reverse_speed); //negative cos should be returning to original position (reverse motor)
-			stepper.runToPosition();
-		}
-	}
+      stepper.setSpeed(slow_reverse_speed); //negative cos should be returning to original position (reverse motor)
+      stepper.runToPosition();
+    }
+  }
 
-	// return to original position if break is called
+  // return to original position if break is called
 
 }
