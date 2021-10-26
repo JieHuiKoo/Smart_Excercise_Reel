@@ -3,7 +3,6 @@
 // ================================================================
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
-#include <Arduino.h>
 #include <AccelStepper.h>
 #include <ResponsiveAnalogRead.h>
 LiquidCrystal_I2C lcd(0x27, 20, 4);
